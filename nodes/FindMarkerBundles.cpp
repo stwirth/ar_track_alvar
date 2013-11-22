@@ -109,6 +109,7 @@ double max_track_error;
 std::string cam_image_topic; 
 std::string cam_info_topic; 
 std::string output_frame;
+bool reverse_tf = false;
 int n_bundles = 0;   
 
 //Debugging utility function
@@ -526,8 +527,16 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
   out << id;
   std::string id_string = out.str();
   markerFrame += id_string;
-  tf::StampedTransform camToMarker (t, image_msg->header.stamp, image_msg->header.frame_id, markerFrame.c_str());
-  tf_broadcaster->sendTransform(camToMarker);
+  if (!reverse_tf)
+  {
+    tf::StampedTransform camToMarker (t, image_msg->header.stamp, image_msg->header.frame_id, markerFrame.c_str());
+    tf_broadcaster->sendTransform(camToMarker);
+  }
+  else
+  {
+    tf::StampedTransform markerToCam (t.inverse(), image_msg->header.stamp, markerFrame.c_str(), image_msg->header.frame_id);
+    tf_broadcaster->sendTransform(markerToCam);
+  }
 
   //Create the rviz visualization message
   tf::poseTFToMsg (markerPose, rvizMarker->pose);
@@ -773,7 +782,7 @@ int main(int argc, char *argv[])
   if(argc < 9){
     std::cout << std::endl;
     cout << "Not enough arguments provided." << endl;
-    cout << "Usage: ./findMarkerBundles <marker size in cm> <max new marker error> <max track error> <cam image topic> <cam info topic> <output frame> <median filt size> <list of bundle XML files...>" << endl;
+    cout << "Usage: ./findMarkerBundles <marker size in cm> <max new marker error> <max track error> <cam image topic> <cam info topic> <output frame> <median filt size> <reverse tf> <list of bundle XML files...>" << endl;
     std::cout << std::endl;
     return 0;
   }
@@ -786,9 +795,21 @@ int main(int argc, char *argv[])
   cam_info_topic = argv[5];
   output_frame = argv[6];
   med_filt_size = atoi(argv[7]);
-  int n_args_before_list = 8;
+  if(argv[8] == "true")
+    reverse_tf = true;
+  else if (argv[8] == "false")
+    reverse_tf = false;
+  else {
+    std::cout << std::endl << "Invalid value '" << argv[8] << "' for <reverse tf>, must be either 'true' or 'false'." << std::endl;
+    return -1;
+  }
+  int n_args_before_list = 9;
   n_bundles = argc - n_args_before_list;
-
+  if(reverse_tf && n_bundles > 1){
+    std::cout << std::endl;
+    std::cout << "Cannot reverse tf for multiple bundles (would be no tree), please specify only one bundle or set reverse_tf to false." << std::endl;
+    return -2;
+  }
   marker_detector.SetMarkerSize(marker_size);
   multi_marker_bundles = new MultiMarkerBundle*[n_bundles];	
   bundlePoses = new Pose[n_bundles];
